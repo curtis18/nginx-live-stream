@@ -17,7 +17,7 @@ docker run -p 80:80 -p 1935:1935 -d nginx-live-stream
 ## Stream to it
 
 ```
-ffmpeg -re -i your-video.mp4 -c copy -f flv rtmp://localhost:1935/live/your-stream-key
+ffmpeg -re -stream_loop -1 -i your-video.mp4 -c copy -f flv rtmp://localhost:1935/live/your-stream-key
 ```
 
 Or use an encoder like [OBS](https://obsproject.com/) — set the server to `rtmp://localhost:1935/live` and enter any stream key.
@@ -25,6 +25,26 @@ Or use an encoder like [OBS](https://obsproject.com/) — set the server to `rtm
 ## Watch
 
 Open `http://localhost/` in your browser. The player will auto-detect the stream and start playback.
+
+## Playback
+
+### RTMP
+
+```
+ffplay rtmp://localhost:1935/live/your-stream-key
+```
+
+### HLS (single quality)
+
+```
+ffplay http://localhost/live/your-stream-key.m3u8
+```
+
+### HLS (multi-bitrate, via encoder app)
+
+```
+ffplay http://localhost/hls/your-stream-key.m3u8
+```
 
 # Build from source
 
