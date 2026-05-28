@@ -1,16 +1,33 @@
 # nginx-live-stream
 
-The docker image for nginx rtmp hls server and a html5 player to monitor the live brocasting.
-Build on Alpine with [nginx rtmp module](https://github.com/arut/nginx-rtmp-module) and [video.js](https://github.com/videojs).
+Docker image for an nginx RTMP/HLS live streaming server with an HTML5 video.js player for monitoring broadcasts.
+
+Built with:
+- **nginx 1.30.2** (alpine 3.23) with [nginx-rtmp-module 1.2.2](https://github.com/arut/nginx-rtmp-module) compiled from source
+- **[video.js 8](https://videojs.com/)** loaded via CDN with built-in HLS support
 
 # How to use
+
+## Run the container
+
 ```
-docker run -p 80:80 -p 1935:1935 -d leejoneshane/nginx-live-stream
+docker run -p 80:80 -p 1935:1935 -d nginx-live-stream
 ```
 
-The 80 port is for video player, it will autoplay when stream source is ready.
-The 1935 port is for encoder client like [OBS](https://obsproject.com/), [vlc player](https://www.videolan.org/) or webcam device. use the url below to streaming:
+## Stream to it
 
-rtmp://the.server.tld/live 
+```
+ffmpeg -re -i your-video.mp4 -c copy -f flv rtmp://localhost:1935/live/your-stream-key
+```
 
-The __Stream key__ input whatever you like. And don't use __Authentication__ option.
+Or use an encoder like [OBS](https://obsproject.com/) — set the server to `rtmp://localhost:1935/live` and enter any stream key.
+
+## Watch
+
+Open `http://localhost/` in your browser. The player will auto-detect the stream and start playback.
+
+# Build from source
+
+```
+docker build -t nginx-live-stream .
+```
