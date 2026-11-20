@@ -1,2 +1,5 @@
 .env
 *.log
+compose.yaml
+haproxy/streams.cfg
+haproxy/certbot.sh

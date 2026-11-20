@@ -1,0 +1,66 @@
+# Template for nginx-live-stream. Render a local config with:
+#
+#   haproxy/render.sh
+#
+# haproxy/streams.cfg is generated from .env and is not committed.
+# Public hostnames are the first STREAM_COUNT names, from ${HOST_PREFIX}01.${DOMAIN}.
+# Backend ports are the matching HTTP_PORT values. The default count is 9.
+# The same command writes haproxy/certbot.sh. An empty CERTBOT_EMAIL leaves the
+# Let's Encrypt account contact unset.
+# render.sh does not edit the running HAProxy configuration.
+#
+# Merge the rendered blocks into your existing HAProxy configuration. If you
+# already have a frontend on *:443, add the certificates and use_backend rules
+# to that frontend instead of creating a second bind.
+#
+# Basic Auth for /control and /stat is handled by nginx. HAProxy only proxies
+# requests and forwards the Authorization header.
+#
+# RTMP is not proxied here. Publishers connect directly to the selected
+# RTMP_PORT values (default 1935 for stream 1, then 1936, and so on).
+
+defaults
+    mode http
+    option httplog
+    option dontlognull
+    option forwardfor
+    timeout connect 5s
+    timeout client 30s
+    timeout server 30s
+    timeout http-request 10s
+
+frontend http_in
+    # Remove this block if you already have an HTTP frontend.
+    # Certbot listens on 127.0.0.1:${ACME_PORT} only while it is running.
+    bind *:80
+    acl acme path_beg /.well-known/acme-challenge/
+    use_backend acme if acme
+    http-request redirect scheme https code 301 if !acme
+
+backend acme
+    mode http
+    server certbot 127.0.0.1:${ACME_PORT} no-check
+
+frontend streaming
+    # haproxy/certbot.sh installs one combined PEM in this directory:
+    # /etc/ssl/private/streams/${HOST_PREFIX}.${DOMAIN}.pem
+    # A wildcard certificate can replace the directory with one crt line.
+    bind *:443 ssl crt /etc/ssl/private/streams/ alpn h2,http/1.1
+    ssl-min-ver TLSv1.2
+
+@@HOST_ACLS@@
+    http-request deny deny_status 404 if !known_host
+
+@@USE_BACKENDS@@
+
+# Health checks deliberately use /healthz. Do not use /stat for checks because
+# /stat requires Basic Auth when credentials are configured.
+
+@@BACKENDS@@
+
+# If HAProxy runs in a container instead of on the Docker host:
+#   - use host.docker.internal and the rendered backend ports, or
+#   - attach HAProxy to nginx-live-net and use nginx-live-1:80 onward.
+#
+# If clients send a Host header with a port, e.g. ${HOST_PREFIX}01.${DOMAIN}:443,
+# replace hdr(host) with req.hdr(host),field(1,:), or route by ssl_fc_sni.

@@ -1,0 +1,87 @@
+# Edit this template. haproxy/render.sh writes compose.yaml from it.
+# The generated compose.yaml is local and is not committed.
+
+name: nginx-live-stream
+
+x-stream: &stream
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: nginx-live-stream:latest
+  restart: unless-stopped
+  stop_grace_period: 30s
+  expose:
+    - "80"
+  networks:
+    - streams
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+  healthcheck:
+    test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+    interval: 30s
+    timeout: 5s
+    retries: 3
+    start_period: 15s
+
+x-control-env: &control-env
+  CONTROL_USER: "${CONTROL_USER:-admin}"
+  CONTROL_PASSWORD: "${CONTROL_PASSWORD:-}"
+  CONTROL_PASSWORD_FILE: "${CONTROL_PASSWORD_FILE:-}"
+
+services:
+  # RTMP ingest uses RTMP_PORT_N (default 1935 for stream 1, then 1936, and so on).
+  # HTTP is loopback-only for HAProxy on HTTP_PORT_N (default 18080, 18081, and so on).
+  # Public viewer URLs are https://${HOST_PREFIX}NN.${DOMAIN}/.
+  # Each container records only under /var/rec/$RECORD_SLOT.
+# @@SERVICES@@
+
+# @@SERVICE@@
+  stream-@@N@@:
+    <<: *stream
+    container_name: nginx-live-@@N@@
+    environment:
+      <<: *control-env
+      RECORD_SLOT: stream-@@N@@
+    ports:
+      - "${RTMP_BIND:-0.0.0.0}:${RTMP_PORT_@@N@@:-@@RTMP@@}:1935"
+      - "${HTTP_BIND:-127.0.0.1}:${HTTP_PORT_@@N@@:-@@HTTP@@}:80"
+    volumes:
+      - recordings:/var/rec
+      - ./www:/www:ro
+      - ./config/stream-@@N@@.json:/www/stream.json:ro
+# @@END@@
+
+  # Optional: delete recordings older than RECORD_RETENTION_DAYS.
+  # Start with: docker compose --profile cleanup up -d
+  recordings-cleanup:
+    image: alpine:3.24.4
+    container_name: nginx-live-cleanup
+    profiles: ["cleanup"]
+    restart: unless-stopped
+    network_mode: none
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      RECORD_RETENTION_DAYS: ${RECORD_RETENTION_DAYS:-14}
+    command: ["sh", "-c", "while true; do find /var/rec -type f -mtime +${RECORD_RETENTION_DAYS:-14} -delete; sleep 3600; done"]
+    volumes:
+      - recordings:/var/rec
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  recordings:
+    name: nginx-live-recordings
+
+networks:
+  streams:
+    name: nginx-live-net

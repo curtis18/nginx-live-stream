@@ -2,10 +2,10 @@
 
 Nine isolated nginx RTMP/HLS stream containers.
 
-- RTMP ingest is direct on host ports **1935–1943**.
+- RTMP ingest is direct on the host ports in `.env` (default **1935–1943**).
 - Each container serves its own HTML5 player and HLS playlist over HTTP.
 - HAProxy terminates TLS on **443** and forwards each public hostname to one container.
-- The container HTTP ports **18080–18088** are bound to loopback and are only for HAProxy.
+- The container HTTP ports in `.env` (default **18080–18088**) are bound to loopback and are only for HAProxy.
 - Recordings are written to one shared Docker volume.
 - `/control` and `/stat` use env-driven Basic Auth when credentials are configured.
 
@@ -38,7 +38,7 @@ HAProxy owns 443 and the TLS certificates. The stream containers do not listen o
 | stream-8 | nginx-live-8 | 1942 | 18087 | `14` | `/live/14.m3u8` |
 | stream-9 | nginx-live-9 | 1943 | 18088 | `16` | `/live/16.m3u8` |
 
-The backend range starts at 18080 instead of 8080 to avoid the common `127.0.0.1:8080` conflict. Change the host mappings if your host differs.
+These are the defaults from `.env.example`. The backend range starts at 18080 instead of 8080 to avoid the common `127.0.0.1:8080` conflict. Change `RTMP_PORT_1`–`RTMP_PORT_9` or `HTTP_PORT_1`–`HTTP_PORT_9` in `.env` if the host differs, then recreate the containers.
 
 The backend HTTP ports are not viewer URLs. Viewers use the HAProxy vhost, for example:
 
@@ -52,7 +52,7 @@ https://stream01.example.com/healthz
 
 - Docker Engine with Docker Compose v2.
 - HAProxy on the same host, listening on 443.
-- DNS records for the nine stream hostnames pointing at the HAProxy address.
+- DNS records for the selected stream hostnames pointing at the HAProxy address. The default is nine.
 - HAProxy certificates for those hostnames.
 
 ## Quick start
@@ -60,6 +60,7 @@ https://stream01.example.com/healthz
 ```sh
 cp .env.example .env
 # Edit .env and set CONTROL_PASSWORD before exposing the admin endpoints.
+haproxy/render.sh
 docker compose build
 docker compose up -d
 docker compose ps
@@ -195,11 +196,28 @@ HAProxy should terminate TLS on 443 and route by hostname to the matching loopba
 | `stream08.<domain>` | `127.0.0.1:18087` |
 | `stream09.<domain>` | `127.0.0.1:18088` |
 
+The table above is the default of nine streams (`HOST_PREFIX=stream`, `DOMAIN=example.com`, HTTP ports 18080–18088). `STREAM_COUNT` selects how many of those streams to run, from 1 to 9. `haproxy/render.sh --container 3` uses 3 for that run. Public names stay `${HOST_PREFIX}01.${DOMAIN}` onward. A production `.env` can set a different prefix and domain, for example `HOST_PREFIX=mcctv` and `DOMAIN=tdoffice.work`, without changing the repository.
+
 The backend uses plain HTTP. No certificate is needed inside the containers. Basic Auth is handled by nginx; HAProxy forwards the `Authorization` header by default, so no HAProxy userlist is required.
 
 If HAProxy already has a `*:443` frontend, merge the certificates and `use_backend` rules into it instead of creating a second bind.
 
-A complete example is in [`haproxy/streams.cfg.example`](haproxy/streams.cfg.example). It includes hostname routing, TLS certificates, and `/healthz` checks.
+[`haproxy/streams.cfg.template`](haproxy/streams.cfg.template) is the only HAProxy template. Render the local files from `.env`:
+
+```sh
+haproxy/render.sh
+```
+
+That writes `compose.yaml`, `haproxy/streams.cfg`, and `haproxy/certbot.sh` for `STREAM_COUNT` streams. Copy or merge `streams.cfg` into the server's HAProxy config, then reload HAProxy yourself. `render.sh` does not edit `/etc/haproxy/haproxy.cfg`, does not run certbot, and does not reload HAProxy.
+
+```sh
+haproxy/render.sh --container 3
+docker compose up -d --remove-orphans
+```
+
+`--remove-orphans` stops containers that are no longer in the generated file. Lowering the count does not change an existing certificate until you review and run the new `haproxy/certbot.sh`.
+
+Port 80 redirects to HTTPS except `/.well-known/acme-challenge/`, which is forwarded to `127.0.0.1:9080` (`ACME_PORT`). Review `haproxy/certbot.sh --help`, then run `sudo haproxy/certbot.sh` after the selected DNS names point at this host. `CERTBOT_EMAIL` is optional. When it is empty, the command uses `--register-unsafely-without-email` and leaves the Let's Encrypt account contact unset. Snap certbot's `snap.certbot.renew.timer` renews the certificate. The deploy hook installed by that command replaces the PEM and reloads HAProxy; the reload does not rewrite the HAProxy config. `.env`, `compose.yaml`, `haproxy/streams.cfg`, and `haproxy/certbot.sh` are not committed.
 
 Use `/healthz` for backend health checks:
 
@@ -291,27 +309,40 @@ CONTROL_USER=admin
 CONTROL_PASSWORD=
 # CONTROL_PASSWORD_FILE=/run/secrets/control_password
 
-# Future nginx-proxy stage; not used by this compose file
+# Public names: stream01.example.com through stream09.example.com by default.
 DOMAIN=example.com
-LETSENCRYPT_EMAIL=admin@example.com
-LETSENCRYPT_TEST=true
+HOST_PREFIX=stream
+# 1 to 9. The default render is the first nine streams.
+STREAM_COUNT=9
+# Optional. Leave empty to keep the Let's Encrypt account contact unset.
+CERTBOT_EMAIL=
+ACME_PORT=9080
+
+# Host ports. The container still listens on 1935 and 80.
+RTMP_PORT_1=1935
+HTTP_PORT_1=18080
 ```
 
-`.env` is ignored by git. Do not commit real credentials.
+`RTMP_PORT_2` through `RTMP_PORT_9` default to 1936–1943. `HTTP_PORT_2` through `HTTP_PORT_9` default to 18081–18088. The full list is in `.env.example`.
 
-Changing `CONTROL_USER`, `CONTROL_PASSWORD`, or the contents of `CONTROL_PASSWORD_FILE` requires recreating the containers:
+`.env` is ignored by git. Do not commit real credentials, `compose.yaml`, `haproxy/streams.cfg`, or `haproxy/certbot.sh`.
+
+Changing the stream count, hostnames, ports, `CONTROL_USER`, `CONTROL_PASSWORD`, or the contents of `CONTROL_PASSWORD_FILE` requires rendering again and recreating the containers. After lowering `STREAM_COUNT`, `--remove-orphans` stops the extra containers:
+
+```sh
+haproxy/render.sh
+docker compose up -d --force-recreate --remove-orphans
+```
+
+Reload HAProxy after a hostname, port, or count change. No image rebuild is required for those changes.
+
+Each container reads its stream name from `config/stream-N.json`, mounted at `/www/stream.json`. The `name` field is the only RTMP key that container accepts. The defaults are `0`, `2`, `4`, `6`, `8`, `10`, `12`, `14`, and `16`. `name` may contain letters, digits, `.`, `_`, and `-`. Reload the page to change the title. Recreate that container after changing `name`:
 
 ```sh
 docker compose up -d --force-recreate
 ```
 
-Each container reads its stream name from `config/stream-N.json`, mounted at `/www/stream.json`. Reload the page to change the title. The stream name is read when the container starts and is the only RTMP stream key that container accepts. `name` may contain letters, digits, `.`, `_`, and `-`. Recreate the containers after changing `name`:
-
-```sh
-docker compose up -d --force-recreate
-```
-
-The compose file also sets `VIRTUAL_HOST`, `VIRTUAL_PORT`, and `LETSENCRYPT_HOST` on every stream container. These are inert in this stage. They are kept for a future `nginx-proxy` + `acme-companion` deployment. If that proxy runs on a different Docker host, copy the same hostname mapping into that setup.
+Public hostnames come from `HOST_PREFIX` and `DOMAIN`. `haproxy/render.sh` writes them into `haproxy/streams.cfg`. The stream containers do not terminate TLS.
 
 ## Build details
 
@@ -337,7 +368,7 @@ docker compose logs --tail=100 nginx-live-1
 
 **Port already in use**
 
-Another service is using one of 1935–1943 or 18080–18088. Change the host port mapping or stop the conflicting service.
+Another service is using one of the configured RTMP or HTTP ports (1935–1943 and 18080–18088 by default). Change `RTMP_PORT_*` or `HTTP_PORT_*` in `.env`, or stop the conflicting service. Recreate the containers after changing ports, and run `haproxy/render.sh` if an HTTP port changed.
 
 **Recordings are not writable**
 
