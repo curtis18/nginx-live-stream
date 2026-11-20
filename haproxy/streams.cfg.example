@@ -1,0 +1,118 @@
+# Example HAProxy configuration for nginx-live-stream.
+#
+# Merge these blocks into your existing HAProxy configuration. If you already
+# have a frontend on *:443, add the certificates and use_backend rules to that
+# frontend instead of creating a second bind.
+#
+# Basic Auth for /control and /stat is handled by nginx. HAProxy only proxies
+# requests and forwards the Authorization header.
+#
+# RTMP is not proxied here. Publishers connect directly to ports 1935-1943.
+
+defaults
+    mode http
+    option httplog
+    option dontlognull
+    option forwardfor
+    timeout connect 5s
+    timeout client 30s
+    timeout server 30s
+    timeout http-request 10s
+
+frontend http_in
+    # Remove this block if you already have an HTTP frontend.
+    bind *:80
+    http-request redirect scheme https code 301
+
+frontend streaming
+    # Put combined certificate + private-key PEM files in this directory.
+    # A wildcard certificate can replace the directory with one crt line.
+    # If your HAProxy does not support crt directories, list each certificate:
+    # crt /etc/ssl/private/stream01.example.com.pem crt ... alpn h2,http/1.1
+    bind *:443 ssl crt /etc/ssl/private/streams/ alpn h2,http/1.1
+    ssl-min-ver TLSv1.2
+
+    acl known_host hdr(host) -i stream01.example.com
+    acl known_host hdr(host) -i stream02.example.com
+    acl known_host hdr(host) -i stream03.example.com
+    acl known_host hdr(host) -i stream04.example.com
+    acl known_host hdr(host) -i stream05.example.com
+    acl known_host hdr(host) -i stream06.example.com
+    acl known_host hdr(host) -i stream07.example.com
+    acl known_host hdr(host) -i stream08.example.com
+    acl known_host hdr(host) -i stream09.example.com
+    http-request deny deny_status 404 if !known_host
+
+    use_backend stream01 if { hdr(host) -i stream01.example.com }
+    use_backend stream02 if { hdr(host) -i stream02.example.com }
+    use_backend stream03 if { hdr(host) -i stream03.example.com }
+    use_backend stream04 if { hdr(host) -i stream04.example.com }
+    use_backend stream05 if { hdr(host) -i stream05.example.com }
+    use_backend stream06 if { hdr(host) -i stream06.example.com }
+    use_backend stream07 if { hdr(host) -i stream07.example.com }
+    use_backend stream08 if { hdr(host) -i stream08.example.com }
+    use_backend stream09 if { hdr(host) -i stream09.example.com }
+
+# Health checks deliberately use /healthz. Do not use /stat for checks because
+# /stat requires Basic Auth when credentials are configured.
+
+backend stream01
+    mode http
+    option httpchk GET /healthz
+    http-check expect status 200
+    server stream01 127.0.0.1:18080 check inter 5s fall 3 rise 2
+
+backend stream02
+    mode http
+    option httpchk GET /healthz
+    http-check expect status 200
+    server stream02 127.0.0.1:18081 check inter 5s fall 3 rise 2
+
+backend stream03
+    mode http
+    option httpchk GET /healthz
+    http-check expect status 200
+    server stream03 127.0.0.1:18082 check inter 5s fall 3 rise 2
+
+backend stream04
+    mode http
+    option httpchk GET /healthz
+    http-check expect status 200
+    server stream04 127.0.0.1:18083 check inter 5s fall 3 rise 2
+
+backend stream05
+    mode http
+    option httpchk GET /healthz
+    http-check expect status 200
+    server stream05 127.0.0.1:18084 check inter 5s fall 3 rise 2
+
+backend stream06
+    mode http
+    option httpchk GET /healthz
+    http-check expect status 200
+    server stream06 127.0.0.1:18085 check inter 5s fall 3 rise 2
+
+backend stream07
+    mode http
+    option httpchk GET /healthz
+    http-check expect status 200
+    server stream07 127.0.0.1:18086 check inter 5s fall 3 rise 2
+
+backend stream08
+    mode http
+    option httpchk GET /healthz
+    http-check expect status 200
+    server stream08 127.0.0.1:18087 check inter 5s fall 3 rise 2
+
+backend stream09
+    mode http
+    option httpchk GET /healthz
+    http-check expect status 200
+    server stream09 127.0.0.1:18088 check inter 5s fall 3 rise 2
+
+# If HAProxy runs in a container instead of on the Docker host:
+#   - use host.docker.internal:18080 ... host.docker.internal:18088, or
+#   - attach HAProxy to nginx-live-net and use nginx-live-1:80 ... nginx-live-9:80.
+#
+# If clients send a Host header with a port, e.g. stream01.example.com:443,
+# replace hdr(host) with req.hdr(host),field(1,:), or route by ssl_fc_sni.

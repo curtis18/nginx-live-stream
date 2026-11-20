@@ -1,0 +1,101 @@
+:root {
+  color-scheme: dark;
+  --bg: #080b10;
+  --panel: #101722;
+  --text: #eef3f8;
+  --muted: #94a3b8;
+  --accent: #22c55e;
+  --danger: #f97316;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at 50% -20%, #172334 0, transparent 55%),
+    var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.page {
+  width: min(1120px, 94vw);
+  margin: 0 auto;
+  padding: clamp(1.25rem, 4vw, 3rem) 0;
+}
+
+.page-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.35rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(1.45rem, 3vw, 2.2rem);
+  font-weight: 700;
+}
+
+.status {
+  flex: none;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid #334155;
+  border-radius: 999px;
+  background: #111a27;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.status.is-live {
+  border-color: rgb(34 197 94 / 45%);
+  color: var(--accent);
+}
+
+.player-shell {
+  overflow: hidden;
+  border: 1px solid #223042;
+  border-radius: 14px;
+  background: #000;
+  box-shadow: 0 24px 70px rgb(0 0 0 / 45%);
+}
+
+.player-shell .video-js {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+}
+
+.hint {
+  max-width: 60ch;
+  margin: 1rem auto 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.55;
+  text-align: center;
+}
+
+@media (max-width: 560px) {
+  .page-header {
+    align-items: start;
+    flex-direction: column;
+  }
+}

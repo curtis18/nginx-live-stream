@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Live Stream</title>
+  <link rel="stylesheet" href="/vendor/video-js.min.css?v=8.24.2">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <main class="page">
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">Live stream</p>
+        <h1 id="title">Live Stream</h1>
+      </div>
+      <span id="status" class="status" role="status" aria-live="polite">Connecting…</span>
+    </header>
+
+    <div class="player-shell">
+      <video
+        id="player"
+        class="video-js vjs-big-play-centered"
+        controls
+        playsinline
+        preload="auto"
+      ></video>
+    </div>
+
+    <p class="hint">
+      Playback starts automatically when the publisher connects. If the browser
+      blocks autoplay, press play. If the stream is offline, this page retries
+      every few seconds.
+    </p>
+  </main>
+
+  <script src="/vendor/video.min.js?v=8.24.2"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
