@@ -7,7 +7,7 @@ Nine isolated nginx RTMP/HLS stream containers.
 - HAProxy terminates TLS on **HTTPS_PORT** (default **443**) and forwards each public hostname to one container.
 - The container HTTP ports in `.env` (default **18080–18088**) are bound to loopback and are only for HAProxy.
 - Recordings are written to one shared Docker volume.
-- `/control` and `/stat` use env-driven Basic Auth when credentials are configured.
+- The player page, `/control`, and `/stat` use env-driven Basic Auth when credentials are configured. HLS playlists and `/healthz` stay public.
 
 ## Architecture
 
@@ -68,7 +68,7 @@ docker compose up -d
 docker compose ps
 ```
 
-If `CONTROL_USER` or `CONTROL_PASSWORD` is empty, `/control` returns `404` and `/stat` is reachable only from inside the container. Set a strong password before using the admin endpoints.
+If `CONTROL_USER` or `CONTROL_PASSWORD` is empty, the player page stays public, `/control` returns `404`, and `/stat` is reachable only from inside the container. Set a strong password before using the player or the admin endpoints.
 
 Check a backend directly:
 
@@ -131,7 +131,7 @@ ffmpeg -re \
 
 ## Admin endpoints
 
-`/control` and `/stat` are protected by Basic Auth. The containers generate the htpasswd file from `CONTROL_USER` and `CONTROL_PASSWORD` at startup, so no credentials are stored in the image and HAProxy does not need an auth userlist.
+The player page, `/control`, and `/stat` are protected by Basic Auth when credentials are set. The containers generate the htpasswd file from `CONTROL_USER` and `CONTROL_PASSWORD` at startup, so no credentials are stored in the image and HAProxy does not need an auth userlist. HLS playlists, `/stream.json`, and `/healthz` stay public.
 
 `/control` exposes the nginx-rtmp `drop`, `record`, and `redirect` commands. All commands use GET.
 
@@ -168,15 +168,15 @@ curl -u admin 'https://stream01.example.com/control/redirect/subscriber?app=live
 
 `drop` and `redirect` also accept optional `addr` and `clientid` filters to target one client.
 
-Show RTMP statistics:
+Show the RTMP statistics page:
 
 ```sh
 curl -u admin 'https://stream01.example.com/stat'
 ```
 
-`curl -u admin` prompts for the password. Each vhost controls and reports only its own stream. The control path format is `/control/<section>/<method>?args`, not `/control?method=...`. `/stat` returns raw XML; the old `stat.xsl` stylesheet is not served.
+`curl -u admin` prompts for the password. Each vhost controls and reports only its own stream. The control path format is `/control/<section>/<method>?args`, not `/control?method=...`. `/stat` returns the statistics page as HTML. The same password protects the player page.
 
-If `CONTROL_USER` or `CONTROL_PASSWORD` is empty, `/control` returns `404` and `/stat` is reachable only from inside the container. Recreate the containers after changing credentials:
+If `CONTROL_USER` or `CONTROL_PASSWORD` is empty, the player page stays public, `/control` returns `404`, and `/stat` is reachable only from inside the container. Recreate the containers after changing credentials:
 
 ```sh
 docker compose up -d --force-recreate
@@ -284,11 +284,11 @@ This stage deliberately has no RTMP publish authentication and no TLS on RTMP.
 - Any other stream key is refused, so a mismatched key does not create a second HLS playlist on that container.
 - RTMP is plaintext.
 - Restrict the RTMP ports with a firewall, VPN, or private bind address.
-- HAProxy provides HTTPS for viewers and for `/control` and `/stat`.
-- `/control` and `/stat` require Basic Auth when `CONTROL_USER` and `CONTROL_PASSWORD` are set.
-- Without credentials, `/control` returns 404 and `/stat` is reachable only from inside the container.
+- HAProxy provides HTTPS for the player, `/control`, and `/stat`.
+- The player page, `/control`, and `/stat` require Basic Auth when `CONTROL_USER` and `CONTROL_PASSWORD` are set. HLS media, `/stream.json`, and `/healthz` do not.
+- Without credentials, the player page stays public, `/control` returns 404, and `/stat` is reachable only from inside the container.
 - `/control` exposes `drop`, `record`, and `redirect`. These can disconnect clients, stop the current recording, or rename a live stream. Keep the password strong and use HTTPS.
-- `/crossdomain.xml` and `/stat.xsl` are not served.
+- `/crossdomain.xml` is not served. The statistics stylesheet is applied on the server and is not a separate URL.
 - Do not send Basic Auth over plain HTTP. Keep `HTTP_BIND=127.0.0.1` and publish only through HAProxy on `HTTPS_PORT`.
 - `docker inspect` exposes `CONTROL_PASSWORD`. Use `CONTROL_PASSWORD_FILE` with a mounted file or Docker secret if that matters.
 
@@ -308,7 +308,7 @@ RTMP_BIND=0.0.0.0
 HTTP_BIND=127.0.0.1
 RECORD_RETENTION_DAYS=14
 
-# Basic Auth for /control and /stat. Leave the password empty to keep them disabled.
+# Basic Auth for the player page, /control, and /stat. Leave the password empty to leave the player public.
 CONTROL_USER=admin
 CONTROL_PASSWORD=
 # CONTROL_PASSWORD_FILE=/run/secrets/control_password
@@ -417,11 +417,11 @@ docker compose up -d --force-recreate
 
 **`/control` or `/stat` returns 401**
 
-Basic Auth is enabled. Use `curl -u admin ...` and enter the password, or use the browser password prompt. If the password was changed, recreate the containers.
+Basic Auth is enabled. The player page returns 401 as well. Use `curl -u admin ...` and enter the password, or use the browser password prompt. If the password was changed, recreate the containers.
 
 **`/stat` returns 403**
 
-The old localhost-only configuration is probably still running. Rebuild and recreate:
+From outside the container, this is expected when `CONTROL_USER` or `CONTROL_PASSWORD` is empty. `/stat` is then limited to localhost. When credentials are set, rebuild and recreate so the running image includes the statistics page:
 
 ```sh
 docker compose build

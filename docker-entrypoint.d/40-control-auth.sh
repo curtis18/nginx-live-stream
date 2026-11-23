@@ -14,7 +14,8 @@ if [ -n "$pass_file" ]; then
 fi
 
 if [ -z "$user" ] || [ -z "$pass" ]; then
-    echo "control-auth: credentials not set; /control disabled and /stat is container-local only"
+    echo "control-auth: credentials not set; player page is public, /control is disabled, and /stat is container-local only"
+    : > /etc/nginx/player-auth.conf
     cat > /etc/nginx/control.conf <<'EOF'
 location ^~ /control/ {
     return 404;
@@ -25,7 +26,9 @@ location = /stat {
     allow ::1;
     deny all;
     default_type text/xml;
+    js_header_filter stat.fix_type;
     rtmp_stat all;
+    xslt_stylesheet /etc/nginx/stat.xsl;
 }
 EOF
     exit 0
@@ -45,6 +48,11 @@ hash="$(printf '%s' "$pass" | openssl passwd -apr1 -stdin)"
 printf '%s:%s\n' "$user" "$hash" > /etc/nginx/control.htpasswd
 chmod 0644 /etc/nginx/control.htpasswd
 
+cat > /etc/nginx/player-auth.conf <<'EOF'
+auth_basic "Stream admin";
+auth_basic_user_file /etc/nginx/control.htpasswd;
+EOF
+
 cat > /etc/nginx/control.conf <<'EOF'
 location ^~ /control/ {
     auth_basic "Stream admin";
@@ -57,8 +65,10 @@ location = /stat {
     auth_basic "Stream admin";
     auth_basic_user_file /etc/nginx/control.htpasswd;
     default_type text/xml;
+    js_header_filter stat.fix_type;
     rtmp_stat all;
+    xslt_stylesheet /etc/nginx/stat.xsl;
 }
 EOF
 
-echo "control-auth: /control and /stat enabled for user '$user'"
+echo "control-auth: player page, /control, and /stat enabled for user '$user'"

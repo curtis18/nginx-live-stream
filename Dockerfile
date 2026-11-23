@@ -38,9 +38,11 @@ FROM nginx:${NGINX_VERSION}-alpine${ALPINE_VERSION}
 ARG NGINX_VERSION
 
 COPY --from=builder "/tmp/nginx-${NGINX_VERSION}/objs/ngx_rtmp_module.so" /etc/nginx/modules/
+COPY --from=builder /tmp/nginx-rtmp-module/stat.xsl /etc/nginx/stat.xsl
 
 RUN apk add --no-cache \
         ffmpeg \
+        libxslt \
         openssl \
         wget \
     && mkdir -p /www /var/rec /tmp/live \
@@ -55,8 +57,11 @@ RUN apk add --no-cache \
         '    allow ::1;' \
         '    deny all;' \
         '    default_type text/xml;' \
+        '    js_header_filter stat.fix_type;' \
         '    rtmp_stat all;' \
+        '    xslt_stylesheet /etc/nginx/stat.xsl;' \
         '}' > /etc/nginx/control.conf \
+    && : > /etc/nginx/player-auth.conf \
     && printf '%s\n' 'record_path /var/rec;' > /etc/nginx/record-path.conf \
     && printf '%s\n' \
         'location = /internal/publish-check {' \
@@ -69,6 +74,7 @@ RUN apk add --no-cache \
         '}' > /etc/nginx/publish-check.conf
 
 COPY nginx.conf /etc/nginx/nginx.conf
+COPY docker/stat-content-type.js /etc/nginx/stat.js
 COPY www/ /www/
 COPY docker-entrypoint.d/ /docker-entrypoint.d/
 RUN chmod +x /docker-entrypoint.d/*.sh \
