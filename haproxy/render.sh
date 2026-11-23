@@ -167,6 +167,8 @@ fi
 
 ACME_PORT=$(read_env ACME_PORT 9080)
 check_port ACME_PORT "$ACME_PORT"
+HTTPS_PORT=$(read_env HTTPS_PORT 443)
+check_port HTTPS_PORT "$HTTPS_PORT"
 CERTBOT_EMAIL=$(read_env CERTBOT_EMAIL "")
 if [ -n "$CERTBOT_EMAIL" ]; then
     check_email "$CERTBOT_EMAIL"
@@ -206,8 +208,8 @@ while [ "$i" -le "$STREAM_COUNT" ]; do
     rtmp=$((1934 + i))
     http=$((18079 + i))
 
-    printf '    acl known_host hdr(host) -i %s\n' "$host" >> "$acls"
-    printf '    use_backend stream%s if { hdr(host) -i %s }\n' "$nn" "$host" >> "$uses"
+    printf '    acl known_host req.hdr(host),field(1,:) -i %s\n' "$host" >> "$acls"
+    printf '    use_backend stream%s if { req.hdr(host),field(1,:) -i %s }\n' "$nn" "$host" >> "$uses"
     cat >> "$backends" <<EOF
 backend stream${nn}
     mode http
@@ -242,9 +244,9 @@ awk '
     { print }
 ' "$staged" > "$compose_output"
 
-export DOMAIN HOST_PREFIX ACME_PORT CERTBOT_EMAIL STREAM_NAMES STREAM_NAME_COMMENTS
+export DOMAIN HOST_PREFIX ACME_PORT HTTPS_PORT CERTBOT_EMAIL STREAM_NAMES STREAM_NAME_COMMENTS
 export CERTBOT_ACCOUNT_ARGS CERTBOT_HELP_CONTACT CERTBOT_HELP_NAMES
-subst='${DOMAIN} ${HOST_PREFIX} ${ACME_PORT} ${CERTBOT_EMAIL} ${STREAM_NAMES} ${STREAM_NAME_COMMENTS} ${CERTBOT_ACCOUNT_ARGS} ${CERTBOT_HELP_CONTACT} ${CERTBOT_HELP_NAMES}'
+subst='${DOMAIN} ${HOST_PREFIX} ${ACME_PORT} ${HTTPS_PORT} ${CERTBOT_EMAIL} ${STREAM_NAMES} ${STREAM_NAME_COMMENTS} ${CERTBOT_ACCOUNT_ARGS} ${CERTBOT_HELP_CONTACT} ${CERTBOT_HELP_NAMES}'
 
 if ! apply_marker "$template" "@@HOST_ACLS@@" "$acls" "$staged"; then
     fail "streams.cfg.template is missing @@HOST_ACLS@@"

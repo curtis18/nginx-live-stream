@@ -4,7 +4,7 @@ Nine isolated nginx RTMP/HLS stream containers.
 
 - RTMP ingest is direct on the host ports in `.env` (default **1935–1943**).
 - Each container serves its own HTML5 player and HLS playlist over HTTP.
-- HAProxy terminates TLS on **443** and forwards each public hostname to one container.
+- HAProxy terminates TLS on **HTTPS_PORT** (default **443**) and forwards each public hostname to one container.
 - The container HTTP ports in `.env` (default **18080–18088**) are bound to loopback and are only for HAProxy.
 - Recordings are written to one shared Docker volume.
 - `/control` and `/stat` use env-driven Basic Auth when credentials are configured.
@@ -14,7 +14,7 @@ Nine isolated nginx RTMP/HLS stream containers.
 ```text
 Viewer
   https://stream01.example.com/            ─┐
-  https://stream01.example.com/live/0.m3u8 ─┼─> HAProxy :443
+  https://stream01.example.com/live/0.m3u8 ─┼─> HAProxy :HTTPS_PORT
   https://stream01.example.com/healthz     ─┘        │
                                                      └─> http://127.0.0.1:18080 ─> nginx-live-1
 
@@ -22,7 +22,7 @@ Publisher
   rtmp://SERVER:1935/live/0 ─────────────────────────────> nginx-live-1  (direct)
 ```
 
-HAProxy owns 443 and the TLS certificates. The stream containers do not listen on 443.
+`HTTPS_PORT` defaults to 443, so those viewer URLs have no port. Set `HTTPS_PORT=4447` and the same paths are `https://stream01.example.com:4447/`. The player, HLS media, `/stream.json`, `/healthz`, `/stat`, and `/control` all use that port. HAProxy owns the TLS certificates. The stream containers do not listen on `HTTPS_PORT`.
 
 ## Stream mapping
 
@@ -40,7 +40,7 @@ HAProxy owns 443 and the TLS certificates. The stream containers do not listen o
 
 These are the defaults from `.env.example`. The backend range starts at 18080 instead of 8080 to avoid the common `127.0.0.1:8080` conflict. Change `RTMP_PORT_1`–`RTMP_PORT_9` or `HTTP_PORT_1`–`HTTP_PORT_9` in `.env` if the host differs, then recreate the containers.
 
-The backend HTTP ports are not viewer URLs. Viewers use the HAProxy vhost, for example:
+The backend HTTP ports are not viewer URLs. Viewers use the HAProxy vhost. With the default `HTTPS_PORT=443`:
 
 ```text
 https://stream01.example.com/
@@ -48,10 +48,12 @@ https://stream01.example.com/live/0.m3u8
 https://stream01.example.com/healthz
 ```
 
+When `HTTPS_PORT` is another port, include it: `https://stream01.example.com:4447/`.
+
 ## Requirements
 
 - Docker Engine with Docker Compose v2.
-- HAProxy on the same host, listening on 443.
+- HAProxy on the same host, listening on `HTTPS_PORT` (443 by default).
 - DNS records for the selected stream hostnames pointing at the HAProxy address. The default is nine.
 - HAProxy certificates for those hostnames.
 
@@ -79,6 +81,8 @@ Check through HAProxy after its configuration is updated:
 ```sh
 curl -fsS https://stream01.example.com/healthz
 ```
+
+When `HTTPS_PORT` is not 443, include that port, for example `curl -fsS https://stream01.example.com:4447/healthz`.
 
 ## Publish
 
@@ -182,7 +186,7 @@ docker compose up -d --force-recreate
 
 ## HAProxy
 
-HAProxy should terminate TLS on 443 and route by hostname to the matching loopback backend:
+HAProxy should terminate TLS on `HTTPS_PORT` and route by hostname to the matching loopback backend:
 
 | Public hostname | Backend |
 |---|---|
@@ -200,7 +204,7 @@ The table above is the default of nine streams (`HOST_PREFIX=stream`, `DOMAIN=ex
 
 The backend uses plain HTTP. No certificate is needed inside the containers. Basic Auth is handled by nginx; HAProxy forwards the `Authorization` header by default, so no HAProxy userlist is required.
 
-If HAProxy already has a `*:443` frontend, merge the certificates and `use_backend` rules into it instead of creating a second bind.
+When `HTTPS_PORT` is 443 and HAProxy already has a `*:443` frontend, merge the certificates and `use_backend` rules into that frontend instead of creating a second bind. When `HTTPS_PORT` is another port, add the rendered stream frontend on that port and leave the existing `*:443` frontend unchanged. Do not route the stream hostnames on 443 in that case.
 
 [`haproxy/streams.cfg.template`](haproxy/streams.cfg.template) is the only HAProxy template. Render the local files from `.env`:
 
@@ -217,7 +221,7 @@ docker compose up -d --remove-orphans
 
 `--remove-orphans` stops containers that are no longer in the generated file. Lowering the count does not change an existing certificate until you review and run the new `haproxy/certbot.sh`.
 
-Port 80 redirects to HTTPS except `/.well-known/acme-challenge/`, which is forwarded to `127.0.0.1:9080` (`ACME_PORT`). Review `haproxy/certbot.sh --help`, then run `sudo haproxy/certbot.sh` after the selected DNS names point at this host. `CERTBOT_EMAIL` is optional. When it is empty, the command uses `--register-unsafely-without-email` and leaves the Let's Encrypt account contact unset. Snap certbot's `snap.certbot.renew.timer` renews the certificate. The deploy hook installed by that command replaces the PEM and reloads HAProxy; the reload does not rewrite the HAProxy config. `.env`, `compose.yaml`, `haproxy/streams.cfg`, and `haproxy/certbot.sh` are not committed.
+Port 80 redirects to `HTTPS_PORT` except `/.well-known/acme-challenge/`, which is forwarded to `127.0.0.1:9080` (`ACME_PORT`). On a host where Certbot itself binds port 80, do not add that port 80 frontend. Review `haproxy/certbot.sh --help`, then run `sudo haproxy/certbot.sh` after the selected DNS names point at this host. `CERTBOT_EMAIL` is optional. When it is empty, the command uses `--register-unsafely-without-email` and leaves the Let's Encrypt account contact unset. Snap certbot's `snap.certbot.renew.timer` renews the certificate. The deploy hook installed by that command replaces the PEM and reloads HAProxy; the reload does not rewrite the HAProxy config. `.env`, `compose.yaml`, `haproxy/streams.cfg`, and `haproxy/certbot.sh` are not committed.
 
 Use `/healthz` for backend health checks:
 
@@ -285,7 +289,7 @@ This stage deliberately has no RTMP publish authentication and no TLS on RTMP.
 - Without credentials, `/control` returns 404 and `/stat` is reachable only from inside the container.
 - `/control` exposes `drop`, `record`, and `redirect`. These can disconnect clients, stop the current recording, or rename a live stream. Keep the password strong and use HTTPS.
 - `/crossdomain.xml` and `/stat.xsl` are not served.
-- Do not send Basic Auth over plain HTTP. Keep `HTTP_BIND=127.0.0.1` and publish only through HAProxy on 443.
+- Do not send Basic Auth over plain HTTP. Keep `HTTP_BIND=127.0.0.1` and publish only through HAProxy on `HTTPS_PORT`.
 - `docker inspect` exposes `CONTROL_PASSWORD`. Use `CONTROL_PASSWORD_FILE` with a mounted file or Docker secret if that matters.
 
 Set `RTMP_BIND` to a private address if publishers are on a VPN:
@@ -317,6 +321,8 @@ STREAM_COUNT=9
 # Optional. Leave empty to keep the Let's Encrypt account contact unset.
 CERTBOT_EMAIL=
 ACME_PORT=9080
+# Public TLS port. Use 4447 when 443 already serves other sites.
+HTTPS_PORT=443
 
 # Host ports. The container still listens on 1935 and 80.
 RTMP_PORT_1=1935

@@ -9,9 +9,11 @@
 # Let's Encrypt account contact unset.
 # render.sh does not edit the running HAProxy configuration.
 #
-# Merge the rendered blocks into your existing HAProxy configuration. If you
-# already have a frontend on *:443, add the certificates and use_backend rules
-# to that frontend instead of creating a second bind.
+# Merge the rendered blocks into your existing HAProxy configuration. This
+# frontend listens on ${HTTPS_PORT}. When that value is 443 and this host
+# already has a *:443 frontend, add the certificates and use_backend rules to
+# that frontend instead of creating a second bind. When it is another port,
+# add this frontend on its own and leave the existing *:443 frontend unchanged.
 #
 # Basic Auth for /control and /stat is handled by nginx. HAProxy only proxies
 # requests and forwards the Authorization header.
@@ -35,7 +37,7 @@ frontend http_in
     bind *:80
     acl acme path_beg /.well-known/acme-challenge/
     use_backend acme if acme
-    http-request redirect scheme https code 301 if !acme
+    http-request redirect scheme https code 301 port ${HTTPS_PORT} if !acme
 
 backend acme
     mode http
@@ -45,7 +47,7 @@ frontend streaming
     # haproxy/certbot.sh installs one combined PEM in this directory:
     # /etc/ssl/private/streams/${HOST_PREFIX}.${DOMAIN}.pem
     # A wildcard certificate can replace the directory with one crt line.
-    bind *:443 ssl crt /etc/ssl/private/streams/ alpn h2,http/1.1
+    bind *:${HTTPS_PORT} ssl crt /etc/ssl/private/streams/ alpn h2,http/1.1
     ssl-min-ver TLSv1.2
 
 @@HOST_ACLS@@
@@ -62,5 +64,5 @@ frontend streaming
 #   - use host.docker.internal and the rendered backend ports, or
 #   - attach HAProxy to nginx-live-net and use nginx-live-1:80 onward.
 #
-# If clients send a Host header with a port, e.g. ${HOST_PREFIX}01.${DOMAIN}:443,
-# replace hdr(host) with req.hdr(host),field(1,:), or route by ssl_fc_sni.
+# Host matching uses req.hdr(host),field(1,:), so a Host header that includes
+# ${HTTPS_PORT} selects the same backend as the hostname alone.
